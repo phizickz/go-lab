@@ -75,7 +75,7 @@ func pingNeighbor() {
 }
 
 func Ping(w http.ResponseWriter, r *http.Request) {
-	gambleNumber := getRandomNumber(10)
+	gambleNumber := getRandomNumber(100)
 	hostname, err := os.Hostname()
 	
 	if err != nil {

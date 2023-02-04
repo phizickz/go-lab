@@ -22,7 +22,7 @@ metadata:
   labels:
     app: go-web
 spec:
-  replicas: 6
+  replicas: 5
   selector:
     matchLabels:
       app: go-web
@@ -72,7 +72,7 @@ spec:
     kind: Deployment
     name: go-web
   minReplicas: 1
-  maxReplicas: 10
+  maxReplicas: 30
   metrics:
   - type: Resource
     resource:
@@ -102,5 +102,5 @@ spec:
     scaleDown:
       policies:
       - type: Percent
-        value: 10
-        periodSeconds: 60
+        value: 50
+        periodSeconds: 30
