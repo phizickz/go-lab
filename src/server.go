@@ -8,35 +8,11 @@ import (
 	"io"
 	"os"
 	"io/ioutil"
+	"time"
 )
 
-func helloHandler(w http.ResponseWriter, r *http.Request) {
-	path := "/hello"
-
-	if r.URL.Path != path  {
-		http.Error(w, "404 not found.", http.StatusNotFound)
-		return
-	}
-
-	if r.Method != "GET" {
-		http.Error(w, "Method is not supported.", http.StatusNotFound)
-		return
-	}
-
-	fmt.Fprintf(w,"Hello again!")
-}
-
-func formHandler(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err  != nil {
-		fmt.Fprintf(w, "ParseForm() err: %v", err)
-		return
-	}
-	fmt.Fprintf(w, "POST request successful.\n")
-	name := r.FormValue("name")
-	address := r.FormValue("address")
-	fmt.Fprintf(w, "Name = %s\n", name)
-	fmt.Fprintf(w, "Address = %s\n", address)
-}
+var pingCounter int
+var killSwitch int
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	path := "/health"
@@ -50,11 +26,25 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 		return
 	}
+
+	if killSwitch == 0 {
+		http.Error(w, "Killswitch is not set correctly.", http.StatusNotFound)
+		return
+	}
+
 	fmt.Fprintf(w, "Healthy!")
 }
 
-func getRandomNumber(x int) int {
-	return rand.Intn(x)
+func createSeedNumberFromTime() int {
+	return time.Now().Nanosecond() / 10000
+}
+
+func getRandomNumber() int {
+	return rand.Intn(createSeedNumberFromTime())
+}
+
+func incrementPingCounter() {
+	pingCounter++
 }
 
 func pingNeighbor() {
@@ -74,8 +64,7 @@ func pingNeighbor() {
 	fmt.Printf(string(body))
 }
 
-func Ping(w http.ResponseWriter, r *http.Request) {
-	gambleNumber := getRandomNumber(100)
+func pingHandler(w http.ResponseWriter, r *http.Request) {
 	hostname, err := os.Hostname()
 	
 	if err != nil {
@@ -84,20 +73,28 @@ func Ping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	io.WriteString(w, "Pong from " + hostname +"\n")
-	if gambleNumber > 0 {
-		pingNeighbor()
+	incrementPingCounter()
+
+	if pingCounter >= killSwitch {
+		os.Exit(1)
+	}
+	
+	for i := 0; i >= 5; i++ {
+		go pingNeighbor()
 	}
 }
 
 func main() {
+	pingCounter = 0
+	killSwitch = getRandomNumber()
+
 	fileServer := http.FileServer(http.Dir("./static"))
 	http.Handle("/", fileServer)
+	// http.HandleFunc("/", healthHandler)
 	http.HandleFunc("/health", healthHandler)
-	http.HandleFunc("/form", formHandler)
-	http.HandleFunc("/hello", helloHandler)
-	http.HandleFunc("/ping", Ping)
+	http.HandleFunc("/ping", pingHandler)
 
-	fmt.Printf("Starting server at port 8080\n")
+	fmt.Printf("Starting server at port 8080.\n")
 	if err := http.ListenAndServe("0.0.0.0:8080", nil); err != nil {
 		log.Fatal(err)
 	}
