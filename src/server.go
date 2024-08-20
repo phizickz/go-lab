@@ -9,65 +9,67 @@ import (
 	"os"
 	"time"
 
-	"github.com/justinas/alice"
+	"github.com/goombaio/namegenerator"
 )
 
-var pingCounter int
-var killSwitch int
+type config struct {
+	killSwitch      int
+	name            string
+	pingCounter     int
+	pingRepetitions int
+}
+
+var this config
 
 func getRandomNumber() int {
-	return rand.Intn(time.Now().Nanosecond() / 10000)
+	number := time.Now().Second() * 100
+	return rand.Intn(number)
 }
 
-func lifecycleMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		pingCounter++
-		if pingCounter >= killSwitch {
-			fmt.Println("Pingcount limit reached!")
-			os.Exit(0)
-		}
-		next.ServeHTTP(w, r)
-	})
+func getRandomName() string {
+	return namegenerator.NewNameGenerator(time.Now().UTC().UnixNano()).Generate()
 }
 
-func pingNeighborMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r)
+func pingNeighbor() {
+	var deploymentName string
+	if os.Getenv("DEPLOYMENT_NAME") == "" {
+		deploymentName = "localhost:8080"
+	} else {
+		deploymentName = os.Getenv("DEPLOYMENT_NAME")
+	}
 
-		var deploymentName string
-		if os.Getenv("DEPLOYMENT_NAME") == "" {
-			deploymentName = "localhost:8080"
-		} else {
-			deploymentName = os.Getenv("DEPLOYMENT_NAME")
-		}
+	resp, err := http.Get(fmt.Sprintf("http://%v/ping", deploymentName))
+	if err != nil {
+		fmt.Println(err)
+	}
 
-		resp, err := http.Get(fmt.Sprintf("http://%v/ping", deploymentName))
-		if err != nil {
-			fmt.Println(err)
-		}
-
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Println(string(body))
-	})
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(body))
 }
 
 func pingHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("PONG"))
+	this.pingCounter++
+	if this.pingCounter >= this.killSwitch {
+		fmt.Printf("Killswitch limit reached! %v shutting down...", this.name)
+		os.Exit(0)
+	}
+
+	for i := 0; i < this.pingRepetitions; i++ {
+		go pingNeighbor()
+	}
+	// w.Write([]byte("PONG"))
 }
 
 func main() {
-	pingCounter = 0
-	killSwitch = getRandomNumber()
-	fmt.Println("Killswitch is: " + fmt.Sprint(killSwitch))
-	mux := http.NewServeMux()
-
-	pingHandlerFunc := http.HandlerFunc(pingHandler)
-	mwChain := alice.New(lifecycleMiddleware, pingNeighborMiddleware)
-
-	mux.Handle("/ping", mwChain.Then(pingHandlerFunc))
-
-	fmt.Printf("Starting server at port 8080.\n")
-	if err := http.ListenAndServe("0.0.0.0:8080", mux); err != nil {
-		log.Fatal(err)
+	this = config{
+		getRandomNumber(),
+		getRandomName(),
+		0,
+		2,
 	}
+
+	http.HandleFunc("GET /ping", pingHandler)
+
+	fmt.Printf("Starting %v at port 8080.\nKillswitch is: %v\n", this.name, this.killSwitch)
+	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
 }
